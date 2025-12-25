@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 骰子冒險 - 規則強化版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/RoundedBoxGeometry.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #ffffff; font-family: sans-serif; }
+        
+        #left-ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        #hud {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 8px 16px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        #player-name-display { font-size: 12px; color: #999; font-weight: bold; }
+        .hud-main { display: flex; align-items: baseline; gap: 8px; }
+        #score-label { font-size: 14px; font-weight: 600; color: #777; }
+        #score-value { font-size: 20px; font-weight: 800; color: #000000; min-width: 40px; }
+
+        #dice-status-panel {
+            background: rgba(255, 255, 255, 0.85);
+            padding: 10px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            pointer-events: auto;
+            border: 1px solid rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
+        #dice-status-label { font-size: 10px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+        #dice-faces-preview { 
+            display: grid; 
+            grid-template-columns: repeat(3, 28px); 
+            grid-template-rows: repeat(2, 28px);
+            gap: 6px; 
+        }
+        .face-box { 
+            width: 28px; 
+            height: 28px; 
+            border: 1px solid #eee; 
+            border-radius: 4px; 
+            background: white; 
+            background-size: cover;
+            opacity: 0.9;
+            transition: transform 0.2s;
+        }
+        .face-upgraded { transform: scale(1.2); border-color: #ffeb3b; box-shadow: 0 0 5px #ffeb3b; }
+
+        #action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            pointer-events: auto;
+            width: 100%;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #eee;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            color: #444;
+            transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 140px;
+        }
+        .action-btn:hover { background: #fff; transform: translateY(-1px); }
+        .btn-cost { color: #000000; font-size: 10px; font-weight: 700; opacity: 0.7; }
+
+        #instruction {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #888;
+            font-size: 11px;
+            background: rgba(255,255,255,0.8);
+            padding: 5px 14px;
+            border-radius: 15px;
+            backdrop-filter: blur(4px);
+            text-align: center;
+        }
+
+        #message-box {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            display: none;
+            z-index: 1000;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        .score-up { animation: bounce 0.5s; color: #4CAF50 !important; }
+        .score-down { animation: shake 0.4s; color: #F44336 !important; }
+        @keyframes bounce { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+    </style>
+</head>
+<body>
+    <div id="left-ui">
+        <div id="hud">
+            <div id="player-name-display">載入中...</div>
+            <div class="hud-main">
+                <div id="score-label">積分</div>
+                <div id="score-value">0</div>
+            </div>
+        </div>
+        <div id="dice-status-panel">
+            <div id="dice-status-label" style="text-align: center;">狀態</div>
+            <div id="dice-faces-preview">
+                <div class="face-box" id="f-0"></div>
+                <div class="face-box" id="f-1"></div>
+                <div class="face-box" id="f-2"></div>
+                <div class="face-box" id="f-3"></div>
+                <div class="face-box" id="f-4"></div>
+                <div class="face-box" id="f-5"></div>
+            </div>
+        </div>
+        <div id="action-buttons">
+            <button id="upgrade-btn" class="action-btn" onclick="upgradeDiceFace()">
+                <span>升級能力</span> <span class="btn-cost">100</span>
+            </button>
+            <button class="action-btn" onclick="randomDiceTeleport()">
+                <span>隨機傳送</span> <span class="btn-cost">500</span>
+            </button>
+        </div>
+    </div>
+    <div id="message-box"></div>
+    <div id="instruction">
+        <b>[空白鍵]</b> 行動 | <b>[點擊路徑]</b> 移動 | 戰勝<b>紅色對手</b>獲獎
+    </div>
+
+    <script>
+        let scene, camera, renderer, dice, board;
+        let isCoinMode = false; 
+        const diceSize = 0.56; 
+        const gridSize = 19; 
+        const cellSize = 1;
+        const halfBoard = (gridSize - 1) / 2; 
+
+        let isMoving = false;
+        let hasMovedSinceLastToss = true; 
+        let totalScore = 0;
+        let pathGroup = null; 
+        let cameraAzimuth = 0; 
+        let cameraPolar = 0.8; 
+        let isMouseDown = false;
+        let playerName = "冒險者";
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let diceFacePoints = [1, 1, 1, 2, 2, 3]; 
+        let coinWinChance = 0.5;
+
+        const chipsConfig = [
+            { val: 50, color: '#4CAF50' },  
+            { val: 100, color: '#2196F3' }, 
+            { val: 150, color: '#FFD700' }  
+        ];
+
+        let collectibleObjects = []; 
+        const PATH_COLOR = 0x00FF00; 
+        const OPACITY_NORMAL = 0.05;
+        const OPACITY_TARGET = 0.15;
+        const OPACITY_HOVER_NORMAL = 0.12;
+        const OPACITY_HOVER_TARGET = 0.35;
+        const occupiedLocations = new Map(); 
+
+        function init() {
+            // 新增：啟動時詢問名稱
+            const inputName = prompt("【啟動冒險】\n請輸入您的冒險者名稱：", "傳說勇者");
+            if (inputName) {
+                playerName = inputName;
+            } else {
+                playerName = "匿名旅人";
+            }
+            document.getElementById('player-name-display').innerText = playerName;
+
+            // 詢問指令
+            const secret = prompt("輸入指令或點擊確定開始遊戲：", "");
+            if (secret && secret.toLowerCase() === 'coin') {
+                isCoinMode = true;
+                document.getElementById('dice-status-label').innerText = "金幣正面機率";
+                document.getElementById('dice-faces-preview').style.display = 'none';
+                const statsDiv = document.createElement('div');
+                statsDiv.id = "coin-stats";
+                statsDiv.style.fontSize = "24px";
+                statsDiv.style.fontWeight = "bold";
+                statsDiv.style.color = "#FFD700";
+                document.getElementById('dice-status-panel').appendChild(statsDiv);
+                updateCoinUI();
+            }
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+            const light = new THREE.DirectionalLight(0xffffff, 0.5);
+            light.position.set(10, 20, 10);
+            light.castShadow = true;
+            scene.add(light);
+
+            createBoard();
+            createMapContent();
+            createDice(); 
+            if(!isCoinMode) updateDiceUI();
+            updateCameraPosition();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', (e) => { if(e.code === 'Space') performToss(); });
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', () => isMouseDown = false);
+            animate();
+        }
+
+        // --- 以下邏輯恢復至原始版本 ---
+
+        function updateCoinUI() {
+            if (isCoinMode) {
+                const el = document.getElementById('coin-stats');
+                if (el) el.innerText = (coinWinChance * 100).toFixed(0) + "%";
+            }
+        }
+
+        function updateDiceUI(highlightIndex = -1) {
+            if (isCoinMode) return;
+            diceFacePoints.forEach((pts, i) => {
+                const el = document.getElementById(`f-${i}`);
+                if (!el) return;
+                const canvas = generatePointCanvas(pts);
+                el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+                
+                if (i === highlightIndex) {
+                    el.classList.add('face-upgraded');
+                    setTimeout(() => el.classList.remove('face-upgraded'), 600);
+                }
+            });
+        }
+
+        function createBoard() {
+            const size = gridSize * cellSize;
+            const geometry = new THREE.PlaneGeometry(size, size);
+            const material = new THREE.MeshPhongMaterial({ color: 0xffffff }); 
+            board = new THREE.Mesh(geometry, material);
+            board.rotation.x = -Math.PI / 2;
+            board.receiveShadow = true;
+            scene.add(board);
+            
+            const gridHelper = new THREE.GridHelper(size, gridSize, 0xb0b0b0, 0xc0c0c0);
+            gridHelper.position.y = 0.001; 
+            scene.add(gridHelper);
+        }
+
+        function showMessage(text, color = "white") {
+            const box = document.getElementById('message-box');
+            box.innerText = text;
+            box.style.color = color;
+            box.style.display = 'block';
+            setTimeout(() => { box.style.display = 'none'; }, 2500);
+        }
+
+        function countSurroundingChips(x, z) {
+            let count = 0;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    if (dx === 0 && dz === 0) continue;
+                    if (occupiedLocations.get(`${x + dx},${z + dz}`) === 'chip') count++;
+                }
+            }
+            return count;
+        }
+
+        function hasSurroundingEnemy(x, z) {
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    if (dx === 0 && dz === 0) continue;
+                    if (occupiedLocations.get(`${x + dx},${z + dz}`) === 'enemy') return true;
+                }
+            }
+            return false;
+        }
+
+        function createMapContent() {
+            collectibleObjects.forEach(c => scene.remove(c));
+            collectibleObjects = [];
+            occupiedLocations.clear();
+
+            const possiblePositions = [];
+            for (let x = -halfBoard; x <= halfBoard; x++) {
+                for (let z = -halfBoard; z <= halfBoard; z++) {
+                    if (x === 0 && z === 0) continue; 
+                    possiblePositions.push({x, z});
+                }
+            }
+            
+            for (let i = possiblePositions.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [possiblePositions[i], possiblePositions[j]] = [possiblePositions[j], possiblePositions[i]];
+            }
+
+            const totalCells = gridSize * gridSize;
+            const targetEnemyCount = Math.floor(totalCells * 0.08); 
+            const targetChipCount = Math.floor(totalCells * 0.18);
+
+            let createdChips = 0;
+            let createdEnemies = 0;
+
+            for (let pos of possiblePositions) {
+                const rand = Math.random();
+                if (createdEnemies < targetEnemyCount && rand < 0.15) {
+                    if (!hasSurroundingEnemy(pos.x, pos.z)) {
+                        create3DEnemy(pos.x, pos.z);
+                        occupiedLocations.set(`${pos.x},${pos.z}`, 'enemy');
+                        createdEnemies++;
+                        continue; 
+                    }
+                } 
+                if (createdChips < targetChipCount && rand < 0.25) {
+                    if (!occupiedLocations.has(`${pos.x},${pos.z}`)) {
+                        if (countSurroundingChips(pos.x, pos.z) < 2) {
+                            const chipIdx = Math.floor(Math.random() * chipsConfig.length);
+                            create3DChip(pos.x, pos.z, chipsConfig[chipIdx]);
+                            occupiedLocations.set(`${pos.x},${pos.z}`, 'chip');
+                            createdChips++;
+                        }
+                    }
+                }
+                if (createdEnemies >= targetEnemyCount && createdChips >= targetChipCount) break;
+            }
+        }
+
+        function create3DChip(x, z, config) {
+            const group = new THREE.Group();
+            const chipGeom = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 32);
+            const chipMat = new THREE.MeshPhongMaterial({ color: config.color, transparent: true, opacity: 0.95 });
+            const chipBody = new THREE.Mesh(chipGeom, chipMat);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = config.color; ctx.fillRect(0,0,128,128);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(64,64,52,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#111'; ctx.font = 'bold 42px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(config.val.toString(), 64, 64);
+            
+            const textTex = new THREE.CanvasTexture(canvas);
+            const topGeom = new THREE.CircleGeometry(0.32, 32);
+            const topMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true, opacity: 1.0 });
+            const topLabel = new THREE.Mesh(topGeom, topMat);
+            topLabel.rotation.x = -Math.PI / 2; topLabel.position.y = 0.041;
+            
+            group.add(chipBody, topLabel);
+            group.position.set(x, 0.04, z);
+            group.rotation.y = Math.random() * Math.PI * 2;
+            group.userData = { type: 'chip', value: config.val, x: x, z: z };
+            collectibleObjects.push(group);
+            scene.add(group);
+        }
+
+        function create3DEnemy(x, z) {
+            const points = Math.floor(Math.random() * 5) + 1; 
+            const enemySize = 0.45;
+            const geometry = new THREE.RoundedBoxGeometry(enemySize, enemySize, enemySize, 2, 0.05);
+            
+            const materials = [];
+            for(let i=0; i<6; i++) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#F44336'; ctx.fillRect(0, 0, 128, 128);
+                ctx.fillStyle = 'white';
+                const radius = 18;
+                const posMap = {
+                    1: [[64, 64]], 2: [[35, 35], [93, 93]], 3: [[30, 30], [64, 64], [98, 98]],
+                    4: [[38, 38], [90, 38], [38, 90], [90, 90]], 5: [[38, 38], [90, 38], [64, 64], [38, 90], [90, 90]],
+                    6: [[38, 30], [38, 64], [38, 98], [90, 30], [90, 64], [90, 100]]
+                };
+                (posMap[points] || []).forEach(p => { ctx.beginPath(); ctx.arc(p[0], p[1], radius, 0, Math.PI*2); ctx.fill(); });
+                materials.push(new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) }));
+            }
+            
+            const enemyMesh = new THREE.Mesh(geometry, materials);
+            enemyMesh.position.set(x, enemySize/2, z);
+            enemyMesh.userData = { type: 'enemy', points: points, x: x, z: z };
+            collectibleObjects.push(enemyMesh);
+            scene.add(enemyMesh);
+        }
+
+        function showPath(points) {
+            if (pathGroup) scene.remove(pathGroup);
+            pathGroup = new THREE.Group();
+            const directions = [{n:'xp',x:1,z:0},{n:'xn',x:-1,z:0},{n:'zp',x:0,z:1},{n:'zn',x:0,z:-1}];
+            
+            const finalPoints = isCoinMode ? (Math.floor(Math.random()*4)+1) : points;
+
+            directions.forEach(baseDir => {
+                const pathData = calculatePath(dice.position, baseDir, finalPoints);
+                pathData.forEach((step, i) => {
+                    const geometry = new THREE.PlaneGeometry(0.95, 0.95);
+                    const isTarget = (i === finalPoints && i > 0);
+                    const material = new THREE.MeshBasicMaterial({
+                        color: PATH_COLOR, transparent: true, 
+                        opacity: isTarget ? OPACITY_TARGET : OPACITY_NORMAL,
+                        side: THREE.DoubleSide, depthWrite: false
+                    });
+                    const stepMesh = new THREE.Mesh(geometry, material);
+                    stepMesh.rotation.x = -Math.PI / 2;
+                    stepMesh.position.set(step.x, 0.003, step.z);
+                    stepMesh.userData = { directionName: baseDir.n, isTarget: isTarget, fullPath: pathData };
+                    pathGroup.add(stepMesh);
+                });
+            });
+            scene.add(pathGroup);
+        }
+
+        function calculatePath(startPos, dir, points) {
+            let path = [{ x: Math.round(startPos.x), z: Math.round(startPos.z) }];
+            let curX = path[0].x, curZ = path[0].z, dx = dir.x, dz = dir.z;
+            for (let i = 1; i <= points; i++) {
+                let nx = curX + dx, nz = curZ + dz;
+                if (nx > halfBoard || nx < -halfBoard) { dx = -dx; nx = curX + dx; }
+                if (nz > halfBoard || nz < -halfBoard) { dz = -dz; nz = curZ + dz; }
+                curX = nx; curZ = nz;
+                path.push({ x: curX, z: curZ, dx, dz });
+            }
+            return path;
+        }
+
+        function onMouseDown(e) {
+            isMouseDown = true;
+            if (isMoving || !pathGroup) return;
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            dice.visible = false;
+            const intersects = raycaster.intersectObjects(pathGroup.children);
+            dice.visible = true;
+            if (intersects.length > 0) {
+                const targetObj = intersects.find(intersect => intersect.object.userData.isTarget) || intersects[0];
+                const finalTarget = pathGroup.children.find(child => child.userData.directionName === targetObj.object.userData.directionName && child.userData.isTarget);
+                if (finalTarget) rollDiceAlongPath(finalTarget.userData.fullPath);
+            }
+        }
+
+        function onMouseMove(e) {
+            if (isMouseDown) {
+                cameraAzimuth -= e.movementX * 0.005;
+                cameraPolar += e.movementY * 0.005;
+                cameraPolar = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraPolar));
+            }
+            if (isMoving || !pathGroup) return;
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            dice.visible = false;
+            const intersects = raycaster.intersectObjects(pathGroup.children);
+            dice.visible = true;
+            pathGroup.children.forEach(child => child.material.opacity = child.userData.isTarget ? OPACITY_TARGET : OPACITY_NORMAL);
+            if (intersects.length > 0) {
+                const dirName = intersects[0].object.userData.directionName;
+                pathGroup.children.forEach(child => {
+                    if (child.userData.directionName === dirName) {
+                        child.material.opacity = child.userData.isTarget ? OPACITY_HOVER_TARGET : OPACITY_HOVER_NORMAL;
+                    }
+                });
+            }
+        }
+
+        async function rollDiceAlongPath(path) {
+            isMoving = true;
+            if (pathGroup) { scene.remove(pathGroup); pathGroup = null; }
+            
+            for (let s = 1; s < path.length; s++) {
+                const step = path[s], prev = path[s-1];
+                const enemy = getObjectAt(step.x, step.z, 'enemy');
+                
+                if (enemy) {
+                    showMessage("對決開始！", "#ff4d4d");
+                    await combatTossAnimation(enemy);
+                    
+                    const myPoint = getUpwardFace();
+                    const enemyPoint = enemy.userData.points;
+
+                    if (myPoint >= enemyPoint) {
+                        showMessage(`大獲全勝！重壓敵人！`, "#4CAF50");
+                        addScore(100);
+                        await performCrushMove(prev, step, enemy);
+                        scene.remove(enemy);
+                        collectibleObjects = collectibleObjects.filter(o => o !== enemy);
+                        occupiedLocations.delete(`${enemy.userData.x},${enemy.userData.z}`);
+                        checkChipCollection(step.x, step.z);
+                    } else {
+                        showMessage(`戰敗... 點數不足！`, "#F44336");
+                        subtractScore(50);
+                        hasMovedSinceLastToss = true; 
+                        isMoving = false;
+                        return;
+                    }
+                } else {
+                    await performSingleMove(prev, step);
+                    checkChipCollection(step.x, step.z);
+                }
+            }
+            hasMovedSinceLastToss = true;
+            isMoving = false;
+        }
+
+        async function performCrushMove(from, to, enemy) {
+            const stepDir = { x: to.x - from.x, z: to.z - from.z };
+            const rotationAxis = new THREE.Vector3(stepDir.z, 0, -stepDir.x).normalize();
+            const startPos = dice.position.clone();
+            const startQuat = dice.quaternion.clone();
+            const targetPos = new THREE.Vector3(to.x, isCoinMode ? 0.05 : diceSize/2, to.z);
+            
+            const frames = 15;
+            for (let f = 1; f <= frames; f++) {
+                const t = f / frames;
+                dice.position.lerpVectors(startPos, targetPos, t);
+                dice.position.y = (isCoinMode ? 0.05 : diceSize/2) + Math.sin(t * Math.PI) * 1.2;
+                
+                const stepQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, (Math.PI / 2) * t);
+                dice.quaternion.copy(startQuat).premultiply(stepQuat);
+
+                if (t > 0.6) {
+                    const crushT = (t - 0.6) / 0.4;
+                    enemy.scale.y = 1 - crushT * 0.9;
+                    enemy.position.y = (0.45 * enemy.scale.y) / 2;
+                }
+                await new Promise(requestAnimationFrame);
+            }
+            dice.position.copy(targetPos);
+            snapDiceRotation();
+            const originalY = dice.position.y;
+            for(let i=0; i<6; i++){
+                dice.position.y = originalY + (i % 2 === 0 ? 0.05 : 0);
+                await new Promise(requestAnimationFrame);
+            }
+            dice.position.y = originalY;
+        }
+
+        async function performSingleMove(from, to) {
+            const stepDir = { x: to.x - from.x, z: to.z - from.z };
+            const rotationAxis = new THREE.Vector3(stepDir.z, 0, -stepDir.x).normalize();
+            const startPos = dice.position.clone();
+            const startQuat = dice.quaternion.clone();
+            const targetPos = new THREE.Vector3(to.x, isCoinMode ? 0.05 : diceSize/2, to.z);
+            
+            for (let f = 1; f <= 8; f++) {
+                const t = f / 8;
+                dice.position.lerpVectors(startPos, targetPos, t);
+                dice.position.y = (isCoinMode ? 0.05 : diceSize/2) + Math.sin(t * Math.PI) * 0.2;
+                const stepQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, (Math.PI / 2) * t);
+                dice.quaternion.copy(startQuat).premultiply(stepQuat);
+                await new Promise(requestAnimationFrame);
+            }
+            dice.position.copy(targetPos);
+            snapDiceRotation();
+        }
+
+        async function combatTossAnimation(enemy) {
+            const combatDuration = 30;
+            const axis = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+            const eAxis = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+            const startQuat = dice.quaternion.clone();
+            const eStartQuat = enemy.quaternion.clone();
+            const rotSpeed = Math.PI * 6;
+            const startY = dice.position.y;
+            const eStartY = enemy.position.y;
+
+            for (let f = 1; f <= combatDuration; f++) {
+                const t = f / combatDuration;
+                dice.position.y = startY + Math.sin(t * Math.PI) * 1.8;
+                const currentRot = new THREE.Quaternion().setFromAxisAngle(axis, rotSpeed * t);
+                dice.quaternion.copy(startQuat).premultiply(currentRot);
+                enemy.position.y = eStartY + Math.sin(t * Math.PI) * 1.2;
+                const eRot = new THREE.Quaternion().setFromAxisAngle(eAxis, rotSpeed * t);
+                enemy.quaternion.copy(eStartQuat).premultiply(eRot);
+                await new Promise(requestAnimationFrame);
+            }
+            dice.position.y = isCoinMode ? 0.05 : diceSize / 2;
+            enemy.position.y = 0.45 / 2;
+            if (isCoinMode) {
+                const win = Math.random() < coinWinChance;
+                dice.rotation.set(win ? -Math.PI/2 : Math.PI/2, 0, 0);
+            } else {
+                snapDiceRotation();
+            }
+            const eEuler = new THREE.Euler().setFromQuaternion(enemy.quaternion);
+            eEuler.x = Math.round(eEuler.x / (Math.PI / 2)) * (Math.PI / 2);
+            eEuler.y = Math.round(eEuler.y / (Math.PI / 2)) * (Math.PI / 2);
+            eEuler.z = Math.round(eEuler.z / (Math.PI / 2)) * (Math.PI / 2);
+            enemy.quaternion.setFromEuler(eEuler);
+            await new Promise(resolve => setTimeout(resolve, 600)); 
+        }
+
+        function getObjectAt(x, z, type) {
+            const rx = Math.round(x); const rz = Math.round(z);
+            return collectibleObjects.find(o => o.userData.x === rx && o.userData.z === rz && o.userData.type === type);
+        }
+
+        function checkChipCollection(x, z) {
+            const chip = getObjectAt(x, z, 'chip');
+            if (chip) {
+                addScore(chip.userData.value);
+                scene.remove(chip);
+                collectibleObjects = collectibleObjects.filter(o => o !== chip);
+                occupiedLocations.delete(`${chip.userData.x},${chip.userData.z}`);
+            }
+        }
+
+        function addScore(points) {
+            totalScore += points;
+            const scoreEl = document.getElementById('score-value');
+            scoreEl.innerText = totalScore.toLocaleString();
+            scoreEl.classList.remove('score-up');
+            void scoreEl.offsetWidth; scoreEl.classList.add('score-up');
+            updateDiceUI();
+        }
+
+        function subtractScore(points) {
+            totalScore = Math.max(0, totalScore - points);
+            const scoreEl = document.getElementById('score-value');
+            scoreEl.innerText = totalScore.toLocaleString();
+            scoreEl.classList.remove('score-down');
+            void scoreEl.offsetWidth; scoreEl.classList.add('score-down');
+        }
+
+        function snapDiceRotation() {
+            const euler = new THREE.Euler().setFromQuaternion(dice.quaternion);
+            euler.x = Math.round(euler.x / (Math.PI / 2)) * (Math.PI / 2);
+            euler.y = Math.round(euler.y / (Math.PI / 2)) * (Math.PI / 2);
+            euler.z = Math.round(euler.z / (Math.PI / 2)) * (Math.PI / 2);
+            dice.quaternion.setFromEuler(euler);
+        }
+
+        function getUpwardFace() {
+            if (isCoinMode) {
+                const up = new THREE.Vector3(0, 1, 0);
+                const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(dice.quaternion);
+                return (normal.dot(up) > 0.5) ? 99 : 0; 
+            }
+            const vector = new THREE.Vector3(0, 1, 0);
+            vector.applyQuaternion(dice.quaternion.clone().invert());
+            let maxDot = -1, faceIndex = -1;
+            const fv = [new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),new THREE.Vector3(0,1,0),new THREE.Vector3(0,-1,0),new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)];
+            fv.forEach((v, i) => { const dot = v.dot(vector); if (dot > maxDot) { maxDot = dot; faceIndex = i; } });
+            return diceFacePoints[faceIndex];
+        }
+
+        function performToss() {
+            if(isMoving) return;
+            if (!hasMovedSinceLastToss) { showMessage("請先點擊路徑移動！"); return; }
+            isMoving = true;
+            if (pathGroup) { scene.remove(pathGroup); pathGroup = null; }
+            const duration = 50; let frame = 0;
+            const startQuat = dice.quaternion.clone();
+            const axis = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+            const totalRot = Math.PI * 6 + Math.random() * Math.PI * 4;
+            const curX = dice.position.x, curZ = dice.position.z;
+
+            function animateToss() {
+                frame++; const t = frame / duration;
+                if (frame <= duration) {
+                    dice.position.y = (isCoinMode ? 0.05 : diceSize/2) + Math.sin(t * Math.PI) * 2.5;
+                    const currentRot = new THREE.Quaternion().setFromAxisAngle(axis, totalRot * t);
+                    dice.quaternion.copy(startQuat).premultiply(currentRot);
+                    requestAnimationFrame(animateToss);
+                } else {
+                    dice.position.set(curX, isCoinMode ? 0.05 : diceSize / 2, curZ);
+                    if (isCoinMode) {
+                        const win = Math.random() < coinWinChance;
+                        dice.rotation.set(win ? -Math.PI/2 : Math.PI/2, 0, 0);
+                        if (win) { showMessage("「勝」！十字型移動解鎖", "#FFD700"); showPath(1); } 
+                        else { showMessage("「負」... 停在原地", "#888"); hasMovedSinceLastToss = true; }
+                    } else {
+                        snapDiceRotation(); showPath(getUpwardFace()); 
+                    }
+                    hasMovedSinceLastToss = false;
+                    isMoving = false;
+                }
+            }
+            animateToss();
+        }
+
+        function upgradeDiceFace() {
+            if (isMoving) return;
+            if (totalScore < 100) { showMessage("積分不足 (需要 100)！"); return; }
+            if (isCoinMode) {
+                if (coinWinChance >= 0.95) { showMessage("機率已達上限！"); return; }
+                subtractScore(100);
+                coinWinChance = Math.min(0.95, coinWinChance + 0.05);
+                updateCoinUI(); flashDice(); showMessage(`強化成功！正面機率變為 ${(coinWinChance*100).toFixed(0)}%`, "#ffeb3b");
+            } else {
+                let eligibleIndices = [];
+                diceFacePoints.forEach((pts, i) => { if(pts < 6) eligibleIndices.push(i); });
+                if (eligibleIndices.length === 0) { showMessage("所有面都滿級了！"); return; }
+                subtractScore(100);
+                const targetIdx = eligibleIndices[Math.floor(Math.random() * eligibleIndices.length)];
+                diceFacePoints[targetIdx]++;
+                dice.material[targetIdx].map = new THREE.CanvasTexture(generatePointCanvas(diceFacePoints[targetIdx]));
+                dice.material[targetIdx].needsUpdate = true;
+                flashDice(); updateDiceUI(targetIdx); showMessage(`面升級！點數變為 ${diceFacePoints[targetIdx]}`, "#ffeb3b");
+            }
+        }
+
+        function flashDice() {
+            const originalEmissive = new THREE.Color(0x000000);
+            const flashColor = new THREE.Color(0xffff00);
+            let frame = 0; const duration = 30;
+            function animateFlash() {
+                frame++; const t = frame / duration;
+                const intensity = Math.sin(t * Math.PI) * 0.8;
+                if (Array.isArray(dice.material)) dice.material.forEach(mat => mat.emissive.lerpColors(originalEmissive, flashColor, intensity));
+                else dice.material.emissive.lerpColors(originalEmissive, flashColor, intensity);
+                if (frame < duration) requestAnimationFrame(animateFlash);
+                else {
+                    if (Array.isArray(dice.material)) dice.material.forEach(mat => mat.emissive.set(0x000000));
+                    else dice.material.emissive.set(0x000000);
+                }
+            }
+            animateFlash();
+        }
+
+        async function randomDiceTeleport() {
+            if (isMoving) return;
+            if (totalScore < 500) { showMessage("積分不足 (需要 500)！"); return; }
+            subtractScore(500);
+            const rx = Math.floor(Math.random() * gridSize) - halfBoard;
+            const rz = Math.floor(Math.random() * gridSize) - halfBoard;
+            isMoving = true;
+            if (pathGroup) { scene.remove(pathGroup); pathGroup = null; }
+            const targetPos = new THREE.Vector3(rx, isCoinMode ? 0.05 : diceSize/2, rz);
+            for (let f = 1; f <= 25; f++) {
+                const t = f / 25;
+                if (f <= 12) dice.scale.set(1-t*2, 1-t*2, 1-t*2);
+                else {
+                    dice.position.copy(targetPos);
+                    const t2 = (f-12)/13; dice.scale.set(t2, t2, t2);
+                }
+                await new Promise(requestAnimationFrame);
+            }
+            dice.scale.set(1,1,1); snapDiceRotation(); checkChipCollection(rx, rz);
+            hasMovedSinceLastToss = true; isMoving = false;
+        }
+
+        function generatePointCanvas(point) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 4; ctx.strokeRect(0, 0, 256, 256);
+            ctx.fillStyle = (point === 1 || point === 4) ? '#ff4d4d' : '#333333';
+            const radius = point === 1 ? 48 : 32;
+            const posMap = {
+                1: [[128, 128]], 2: [[70, 70], [186, 186]], 3: [[60, 60], [128, 128], [196, 196]],
+                4: [[75, 75], [181, 75], [75, 181], [181, 181]], 5: [[75, 75], [181, 75], [128, 128], [75, 181], [181, 181]],
+                6: [[75, 60], [75, 128], [75, 196], [181, 60], [181, 128], [181, 196]]
+            };
+            (posMap[point] || []).forEach(p => { ctx.beginPath(); ctx.arc(p[0], p[1], radius, 0, Math.PI * 2); ctx.fill(); });
+            return canvas;
+        }
+
+        function createDice() {
+            if (isCoinMode) {
+                const geometry = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 32);
+                const material = new THREE.MeshPhongMaterial({ color: 0xffd700, shininess: 100 });
+                dice = new THREE.Mesh(geometry, material);
+                const canvas = document.createElement('canvas');
+                canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffd700'; ctx.fillRect(0,0,128,128);
+                ctx.fillStyle = '#000'; ctx.font = 'bold 60px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+                ctx.fillText('勝', 64, 64);
+                const winFace = new THREE.Mesh(new THREE.CircleGeometry(0.38, 32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) }));
+                winFace.position.y = 0.051; winFace.rotation.x = -Math.PI / 2;
+                dice.add(winFace);
+                dice.position.y = 0.05; dice.rotation.x = -Math.PI / 2;
+            } else {
+                const geometry = new THREE.RoundedBoxGeometry(diceSize, diceSize, diceSize, 3, 0.08);
+                const materials = [];
+                for(let i=0; i<6; i++) { 
+                    materials.push(new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(generatePointCanvas(diceFacePoints[i])) })); 
+                }
+                dice = new THREE.Mesh(geometry, materials);
+                dice.position.y = diceSize / 2;
+            }
+            dice.castShadow = true; scene.add(dice);
+        }
+
+        function updateCameraPosition() {
+            const dist = 9;
+            camera.position.set(
+                Math.sin(cameraAzimuth) * Math.cos(cameraPolar) * dist + dice.position.x,
+                Math.sin(cameraPolar) * dist + (isCoinMode ? 0.05 : dice.position.y),
+                Math.sin(cameraAzimuth + Math.PI/2) * Math.cos(cameraPolar) * dist + dice.position.z
+            );
+            camera.lookAt(dice.position.x, (isCoinMode ? 0.05 : dice.position.y), dice.position.z);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updateCameraPosition();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
